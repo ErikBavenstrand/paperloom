@@ -1,0 +1,85 @@
+[project]
+name = "paperloom"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.13.3",
+    "click>=8.1.8",
+    "feedparser>=6.0.11",
+    "openai>=1.66.3",
+    "pymilvus>=2.5.5",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "sentence-transformers>=4.1.0",
+    "sqlalchemy>=2.0.39",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.5",
+    "pytest-cov>=6.2.1",
+    "pytest>=8.3.5",
+    "ruff>=0.11.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+show-fixes = true
+preview = true
+
+[tool.ruff.lint]
+extend-select = ["ALL"]
+ignore = [
+    "ANN401",
+    "CPY",
+    "D100",
+    "D104",
+    "DOC502",
+    "DTZ006",
+    "DTZ007",
+    "FBT001",
+    "N806",
+    "PLR0913",
+    "PLR0917",
+    "PLR2004",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "A002",
+    "ANN002",
+    "ANN003",
+    "ARG002",
+    "ARG004",
+    "D101",
+    "D102",
+    "D103",
+    "D106",
+    "D107",
+    "EM101",
+    "EM102",
+    "PLR0913",
+    "PLR2004",
+    "PLR6301",
+    "S101",
+    "TRY002",
+    "TRY003",
+]
+
+[tool.ruff.format]
+preview = true
+docstring-code-format = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.isort]
+profile = "black"
+lines_after_imports = 1
+line_length = 120
+use_parentheses = true
+include_trailing_comma = true
