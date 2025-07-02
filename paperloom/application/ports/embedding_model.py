@@ -13,7 +13,6 @@ class AbstractEmbeddingModel(ABC):
     @abstractmethod
     def dimensions(self) -> int:
         """Get the dimensions of the embedding model."""
-        raise NotImplementedError
 
     @overload
     def embed_string(self, text: str) -> list[float]: ...
@@ -35,4 +34,3 @@ class AbstractEmbeddingModel(ABC):
             A list of floats representing the embedded string or a list of lists of floats
             if multiple strings are provided.
         """
-        raise NotImplementedError

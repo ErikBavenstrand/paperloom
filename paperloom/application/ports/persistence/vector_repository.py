@@ -45,7 +45,6 @@ class AbstractPaperVectorRepository(ABC):
         Raises:
             VectoryRepositoryInsertionError: If there is an error inserting the embeddings.
         """
-        raise NotImplementedError
 
     @abstractmethod
     def delete_embeddings(self, arxiv_ids: list[str]) -> None:
@@ -57,7 +56,6 @@ class AbstractPaperVectorRepository(ABC):
         Raises:
             VectoryRepositoryDeletionError: If there is an error deleting the embeddings.
         """
-        raise NotImplementedError
 
     @abstractmethod
     def query_embedding(
@@ -80,4 +78,3 @@ class AbstractPaperVectorRepository(ABC):
         Returns:
             List of metadata for the top_k similar embeddings.
         """
-        raise NotImplementedError

@@ -12,89 +12,54 @@ from paperloom.application.ports.paper_extractor import (
 )
 from paperloom.application.ports.persistence.repository import CategoriesNotFoundError, PapersNotFoundError
 from paperloom.application.ports.persistence.unit_of_work import AbstractPaperRepository, AbstractUnitOfWork
-from paperloom.application.services import fetch_and_store_categories, fetch_and_store_latest_papers
+from paperloom.application.services import (
+    NoCategoriesError,
+    fetch_and_store_categories,
+    fetch_and_store_historical_papers,
+    fetch_and_store_latest_papers,
+)
 from paperloom.domain import model
 
 
+# ---- Fake Implementations ----
 class FakePapersRepository(AbstractPaperRepository):
     def __init__(self) -> None:
         self.categories: set[model.Category] = set()
         self.papers: set[model.Paper] = set()
 
-    def upsert_categories(self, categories: list[model.Category]) -> None:
-        for category in categories:
-            if category not in self.categories:
-                self.categories.add(category)
-            else:
-                self.categories.remove(category)
-                self.categories.add(category)
+    def upsert_categories(self, categories: set[model.Category]) -> None:
+        self.categories ^= categories
 
     def get_category(self, category_identifier: model.CategoryIdentifier) -> model.Category | None:
-        for category in self.categories:
-            if category.identifier == category_identifier:
-                return category
-        return None
+        return next((c for c in self.categories if c.identifier == category_identifier), None)
 
-    def get_subcategories(self, archive: str) -> list[model.Category]:
-        return [
-            category
-            for category in self.categories
-            if category.identifier.archive == archive and category.identifier.subcategory is not None
-        ]
-
-    def delete_categories(self, category_identifiers: list[model.CategoryIdentifier]) -> None:
-        matching_categories = [category for category in self.categories if category.identifier in category_identifiers]
-        missing_categories = [
-            category_identifier
-            for category_identifier in category_identifiers
-            if category_identifier not in [category.identifier for category in matching_categories]
-        ]
-
-        if missing_categories:
-            raise CategoriesNotFoundError(missing_categories)
-
-        for category in matching_categories:
-            self.categories.remove(category)
+    def delete_categories(self, category_identifiers: set[model.CategoryIdentifier]) -> None:
+        missing = category_identifiers - {c.identifier for c in self.categories}
+        if missing:
+            raise CategoriesNotFoundError(missing)
+        self.categories = {c for c in self.categories if c.identifier not in category_identifiers}
 
     def list_categories(self) -> list[model.Category]:
-        return sorted(self.categories, key=lambda x: str(x.identifier))
+        return sorted(self.categories, key=lambda c: str(c.identifier))
 
-    def upsert_papers(self, papers: list[model.Paper]) -> None:
-        missing_categories = [
-            category.identifier for paper in papers for category in paper.categories if category not in self.categories
-        ]
-        if missing_categories:
-            raise CategoriesNotFoundError(missing_categories)
-
-        for paper in papers:
-            if paper not in self.papers:
-                self.papers.add(paper)
-            else:
-                self.papers.remove(paper)
-                self.papers.add(paper)
+    def upsert_papers(self, papers: set[model.Paper]) -> None:
+        missing = {cat.identifier for p in papers for cat in p.categories} - {c.identifier for c in self.categories}
+        if missing:
+            raise CategoriesNotFoundError(missing)
+        self.papers ^= papers
 
     def get_paper(self, arxiv_id: str) -> model.Paper | None:
-        for paper in self.papers:
-            if paper.arxiv_id == arxiv_id:
-                return paper
-        return None
+        return next((p for p in self.papers if p.arxiv_id == arxiv_id), None)
 
-    def delete_papers(self, arxiv_ids: list[str]) -> None:
-        matching_papers = [paper for paper in self.papers if paper.arxiv_id in arxiv_ids]
-        missing_papers = [
-            arxiv_id for arxiv_id in arxiv_ids if arxiv_id not in [paper.arxiv_id for paper in matching_papers]
-        ]
-        if missing_papers:
-            raise PapersNotFoundError(missing_papers)
+    def delete_papers(self, arxiv_ids: set[str]) -> None:
+        missing = arxiv_ids - {p.arxiv_id for p in self.papers}
+        if missing:
+            raise PapersNotFoundError(missing)
+        self.papers = {p for p in self.papers if p.arxiv_id not in arxiv_ids}
 
-        for paper in matching_papers:
-            self.papers.remove(paper)
-
-    def list_papers(self, *, limit: int | None) -> list[model.Paper]:
-        sorted_papers = sorted(self.papers, key=lambda x: x.arxiv_id)
-        if limit is None:
-            return sorted_papers
-        return sorted_papers[:limit]
+    def list_papers(self, *, limit: int | None = None) -> list[model.Paper]:
+        papers = sorted(self.papers, key=lambda p: p.arxiv_id)
+        return papers if limit is None else papers[:limit]
 
 
 class FakeUnitOfWork(AbstractUnitOfWork):
@@ -111,22 +76,20 @@ class FakeUnitOfWork(AbstractUnitOfWork):
 class FakeArXivCategoryExtractor(AbstractCategoryExtractor):
     def __init__(
         self,
-        categories: list[CategoryDTO],
+        categories: set[CategoryDTO],
         *,
-        fetch_error: bool | None = None,
-        parse_error: bool | None = None,
+        fetch_error: bool = False,
+        parse_error: bool = False,
     ) -> None:
         self.categories = categories
-        self.fetch_error = CategoryFetchError if fetch_error else None
-        self.parse_error = CategoryParseError if parse_error else None
+        self.fetch_error = fetch_error
+        self.parse_error = parse_error
 
-    def fetch_categories(self) -> list[CategoryDTO]:
+    def fetch_categories(self) -> set[CategoryDTO]:
         if self.fetch_error:
-            raise self.fetch_error
-
+            raise CategoryFetchError
         if self.parse_error:
-            raise self.parse_error
-
+            raise CategoryParseError
         return self.categories
 
 
@@ -134,130 +97,177 @@ class FakePaperExtractor(AbstractPaperExtractor):
     def __init__(self, papers: list[PaperDTO]) -> None:
         self.papers = papers
 
-    def fetch_latest(self, categories: list[model.Category]) -> list[PaperDTO]:
-        category_identifiers = [category.identifier for category in categories]
-        return [
+    def _flatten_ids(self, categories: set[model.Category]) -> set[str]:
+        ids = {str(c.identifier) for c in categories}
+        for c in categories:
+            ids.update(str(sub.identifier) for sub in c.subcategories)
+        return ids
+
+    def fetch_latest(self, categories: set[model.Category]) -> set[PaperDTO]:
+        category_identifiers = self._flatten_ids(categories)
+        return {
             paper
             for paper in self.papers
-            if any(str(category_identifier) in paper.categories for category_identifier in category_identifiers)
-            or any(
-                category_identifier.subcategory is None
-                and category_identifier.archive in {categories.split(".")[0] for categories in paper.categories}
-                for category_identifier in category_identifiers
-            )
-        ]
+            if any(category_identifier in paper.categories for category_identifier in category_identifiers)
+        }
 
     def fetch_historical(
-        self,
-        categories: list[model.Category],
-        from_date: datetime.date | None,
-        to_date: datetime.date | None,
-    ) -> list[PaperDTO]:
-        raise NotImplementedError
+        self, categories: set[model.Category], from_date: datetime.date | None, to_date: datetime.date | None
+    ) -> set[PaperDTO]:
+        category_identifiers = self._flatten_ids(categories)
+        return {
+            paper
+            for paper in self.papers
+            if any(category_identifier in paper.categories for category_identifier in category_identifiers)
+            and (from_date is None or paper.published_at >= from_date)
+            and (to_date is None or paper.published_at <= to_date)
+        }
 
 
+# ---- Fixtures ----
+@pytest.fixture
+def uow() -> FakeUnitOfWork:
+    return FakeUnitOfWork()
+
+
+@pytest.fixture
+def category_dtos() -> set[CategoryDTO]:
+    return {
+        CategoryDTO("cs", "AI", "Computer Science", "Artificial Intelligence", "AI papers"),
+        CategoryDTO("math", None, "Mathematics", None, None),
+    }
+
+
+@pytest.fixture
+def successful_category_extractor(category_dtos: set[CategoryDTO]) -> FakeArXivCategoryExtractor:
+    return FakeArXivCategoryExtractor(category_dtos)
+
+
+@pytest.fixture
+def sample_papers() -> list[PaperDTO]:
+    base = datetime.date(2023, 1, 1)
+    category_list = ["cs.AI", "cs.AI", "cs.ML", "cs.LG", "cs.CV", "cs.CV"]
+    return [
+        PaperDTO(
+            arxiv_id=f"1234.5678v{i}",
+            title=f"Paper {i}",
+            abstract="",
+            published_at=base + datetime.timedelta(days=i),
+            categories={category_list[i]},
+        )
+        for i in range(len(category_list))
+    ]
+
+
+@pytest.fixture
+def paper_extractor(sample_papers: list[PaperDTO]) -> FakePaperExtractor:
+    return FakePaperExtractor(sample_papers)
+
+
+@pytest.fixture
+def populated_uow(uow: FakeUnitOfWork) -> FakeUnitOfWork:
+    subcategories = {
+        model.Category(model.CategoryIdentifier.from_string(sub)) for sub in ["cs.AI", "cs.ML", "cs.LG", "cs.CV"]
+    }
+    categories = {model.Category(model.CategoryIdentifier.from_string("cs"), subcategories=subcategories)}
+    uow.papers.upsert_categories(categories | subcategories)
+    return uow
+
+
+# ---- Tests ----
 class TestFetchAndStoreCategories:
-    def test_fetch_categories_success(self) -> None:
-        fake_categories = [
-            CategoryDTO(
-                archive="cs",
-                subcategory="AI",
-                archive_name="Computer Science",
-                category_name="Artificial Intelligence",
-                description="AI papers",
-            ),
-            CategoryDTO(
-                archive="math",
-                subcategory=None,
-                archive_name="Mathematics",
-                category_name=None,
-                description=None,
-            ),
-        ]
-        fake_extractor = FakeArXivCategoryExtractor(fake_categories)
-        fake_uow = FakeUnitOfWork()
-
-        fetch_and_store_categories(fake_uow, fake_extractor)
-
-        expected_categories = [
-            model.Category(
-                identifier=model.CategoryIdentifier(archive="cs", subcategory="AI"),
-                archive_name="Computer Science",
-                category_name="Artificial Intelligence",
-                description="AI papers",
-            ),
-            model.Category(
-                identifier=model.CategoryIdentifier(archive="math", subcategory=None),
-                archive_name="Mathematics",
-                category_name=None,
-                description=None,
-            ),
-        ]
-
-        stored_categories = fake_uow.papers.list_categories()
-        assert len(stored_categories) == 2
-        for category, expected_category in zip(stored_categories, expected_categories, strict=True):
-            assert category.identifier == expected_category.identifier
-            assert category.archive_name == expected_category.archive_name
-            assert category.category_name == expected_category.category_name
-            assert category.description == expected_category.description
+    def test_success(self, uow: FakeUnitOfWork, successful_category_extractor: FakeArXivCategoryExtractor) -> None:
+        fetch_and_store_categories(uow, successful_category_extractor)
+        stored = uow.papers.list_categories()
+        expected = sorted(
+            [
+                model.Category(
+                    model.CategoryIdentifier("cs", "AI"), "Computer Science", "Artificial Intelligence", "AI papers"
+                ),
+                model.Category(model.CategoryIdentifier("math", None), "Mathematics", None, None),
+            ],
+            key=lambda c: str(c.identifier),
+        )
+        assert stored == expected
 
     @pytest.mark.parametrize(
-        ("fetch_error", "parse_error"),
+        ("fetch_err", "parse_err", "exc"),
         [
-            (True, False),
-            (False, True),
+            (True, False, CategoryFetchError),
+            (False, True, CategoryParseError),
         ],
+        ids=["fetch_error", "parse_error"],
     )
-    def test_fetch_categories_errors(self, fetch_error: bool, parse_error: bool) -> None:
-        fake_extractor = FakeArXivCategoryExtractor([], fetch_error=fetch_error, parse_error=parse_error)
-        fake_uow = FakeUnitOfWork()
-
-        if fetch_error:
-            with pytest.raises(CategoryFetchError):
-                fetch_and_store_categories(fake_uow, fake_extractor)
-
-        if parse_error:
-            with pytest.raises(CategoryParseError):
-                fetch_and_store_categories(fake_uow, fake_extractor)
+    def test_errors(
+        self,
+        uow: FakeUnitOfWork,
+        fetch_err: bool,
+        parse_err: bool,
+        exc: type[Exception],
+    ) -> None:
+        extractor = FakeArXivCategoryExtractor(set(), fetch_error=fetch_err, parse_error=parse_err)
+        with pytest.raises(exc):
+            fetch_and_store_categories(uow, extractor)
 
 
 class TestFetchAndStoreLatestPapers:
-    def test_fetch_latest_papers_success(self) -> None:
-        fake_papers = [
-            PaperDTO(
-                arxiv_id=f"1234.5678v{i}",
-                title=f"Test Paper {i}",
-                abstract="",
-                published_at=datetime.date(2023, 10, 1),
-                categories=categories,
-            )
-            for i, (categories) in enumerate([
-                ["cs.AI"],
-                ["cs.AI"],
-                ["cs.ML"],
-                ["cs.LG"],
-                ["cs.CV"],
-                ["cs.CV"],
-            ])
-        ]
-        fake_extractor = FakePaperExtractor(fake_papers)
-        fake_uow = FakeUnitOfWork()
+    @pytest.mark.parametrize(
+        ("category_strings", "expected_ids"),
+        [
+            (None, {f"1234.5678v{i}" for i in range(6)}),
+            ({"cs.AI"}, {"1234.5678v0", "1234.5678v1"}),
+        ],
+        ids=["all", "cs.AI"],
+    )
+    def test_success(
+        self,
+        populated_uow: FakeUnitOfWork,
+        paper_extractor: FakePaperExtractor,
+        category_strings: set[str] | None,
+        expected_ids: set[str],
+    ) -> None:
+        fetch_and_store_latest_papers(populated_uow, paper_extractor, category_strings=category_strings)
+        stored = populated_uow.papers.list_papers(limit=None)
+        assert {p.arxiv_id for p in stored} == expected_ids
 
-        categories = [
-            model.Category(model.CategoryIdentifier.from_string("cs")),
-            model.Category(model.CategoryIdentifier.from_string("cs.AI")),
-            model.Category(model.CategoryIdentifier.from_string("cs.ML")),
-            model.Category(model.CategoryIdentifier.from_string("cs.LG")),
-            model.Category(model.CategoryIdentifier.from_string("cs.CV")),
-        ]
-        fake_uow.papers.upsert_categories(categories)
+    def test_missing_category_raises(self, uow: FakeUnitOfWork, paper_extractor: FakePaperExtractor) -> None:
+        with pytest.raises(CategoriesNotFoundError):
+            fetch_and_store_latest_papers(uow, paper_extractor, category_strings={"cs"})
 
-        fetch_and_store_latest_papers(
-            category_strings=["cs"],
-            paper_extractor=fake_extractor,
-            uow=fake_uow,
+    def test_no_categories_raises(self, uow: FakeUnitOfWork, paper_extractor: FakePaperExtractor) -> None:
+        with pytest.raises(NoCategoriesError):
+            fetch_and_store_latest_papers(uow, paper_extractor, category_strings=None)
+
+
+class TestFetchHistorical:
+    @pytest.mark.parametrize(
+        ("from_date", "to_date", "expected_ids"),
+        [
+            (None, None, {f"1234.5678v{i}" for i in range(6)}),
+            (datetime.date(2023, 1, 2), datetime.date(2023, 1, 4), {"1234.5678v1", "1234.5678v2", "1234.5678v3"}),
+            (None, datetime.date(2023, 1, 3), {"1234.5678v0", "1234.5678v1", "1234.5678v2"}),
+            (datetime.date(2023, 1, 5), None, {"1234.5678v4", "1234.5678v5"}),
+        ],
+        ids=["all", "mid_range", "up_to", "from_only"],
+    )
+    def test_historical_date_filter(
+        self,
+        populated_uow: FakeUnitOfWork,
+        paper_extractor: FakePaperExtractor,
+        from_date: datetime.date | None,
+        to_date: datetime.date | None,
+        expected_ids: set[str],
+    ) -> None:
+        fetch_and_store_historical_papers(
+            populated_uow, paper_extractor, category_strings={"cs"}, from_date=from_date, to_date=to_date
         )
+        stored = populated_uow.papers.list_papers(limit=None)
+        assert {p.arxiv_id for p in stored} == expected_ids
 
-        stored_papers = fake_uow.papers.list_papers(limit=None)
-        assert len(stored_papers) == 6
+    def test_historical_missing_category_raises(
+        self,
+        uow: FakeUnitOfWork,
+        paper_extractor: FakePaperExtractor,
+    ) -> None:
+        with pytest.raises(CategoriesNotFoundError):
+            fetch_and_store_historical_papers(uow, paper_extractor, category_strings={"cs"})

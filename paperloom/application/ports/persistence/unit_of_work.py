@@ -36,9 +36,7 @@ class AbstractUnitOfWork(ABC):
     @abstractmethod
     def commit(self) -> None:
         """Commit the transaction."""
-        raise NotImplementedError
 
     @abstractmethod
     def rollback(self) -> None:
         """Rollback the transaction."""
-        raise NotImplementedError

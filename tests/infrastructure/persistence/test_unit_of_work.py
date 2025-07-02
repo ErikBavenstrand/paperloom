@@ -15,10 +15,10 @@ def sample_paper() -> model.Paper:
         title="Sample Paper",
         abstract="This is a sample abstract.",
         published_at=datetime.date(2025, 1, 1),
-        categories=[
+        categories={
             model.Category(model.CategoryIdentifier("cs", "CV")),
             model.Category(model.CategoryIdentifier("cs", "CL")),
-        ],
+        },
     )
 
 
@@ -31,7 +31,7 @@ class TestSqlAlchemyUnitOfWork:
         uow = SqlAlchemyUnitOfWork(in_memory_sqlite_session_factory)
         with uow:
             uow.papers.upsert_categories(sample_paper.categories)
-            uow.papers.upsert_papers([sample_paper])
+            uow.papers.upsert_papers({sample_paper})
             uow.commit()
 
         with uow:
@@ -44,7 +44,7 @@ class TestSqlAlchemyUnitOfWork:
             assert set(retrieved_paper.categories) == set(sample_paper.categories)
 
         with uow:
-            uow.papers.delete_papers([sample_paper.arxiv_id])
+            uow.papers.delete_papers({sample_paper.arxiv_id})
             uow.commit()
 
     def test_implicit_rollback(
@@ -55,7 +55,7 @@ class TestSqlAlchemyUnitOfWork:
         uow = SqlAlchemyUnitOfWork(in_memory_sqlite_session_factory)
         with uow:
             uow.papers.upsert_categories(sample_paper.categories)
-            uow.papers.upsert_papers([sample_paper])
+            uow.papers.upsert_papers({sample_paper})
 
         with uow:
             retrieved_paper = uow.papers.get_paper(sample_paper.arxiv_id)
@@ -69,7 +69,7 @@ class TestSqlAlchemyUnitOfWork:
         uow = SqlAlchemyUnitOfWork(in_memory_sqlite_session_factory)
         with uow:
             uow.papers.upsert_categories(sample_paper.categories)
-            uow.papers.upsert_papers([sample_paper])
+            uow.papers.upsert_papers({sample_paper})
             uow.rollback()
 
         with uow:

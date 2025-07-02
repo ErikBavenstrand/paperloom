@@ -48,7 +48,7 @@ class RSSPaperEntry(BaseModel):
         arxiv_id = self.id.split(":")[-1].split("v")[0].strip()
         abstract = self.summary.split("Abstract:")[-1].strip().replace("\n", " ")
         published_at = datetime.datetime.fromtimestamp(time.mktime(self.published_parsed)).date()
-        categories = [tag["term"] for tag in self.tags or [] if "term" in tag and tag["term"] is not None]
+        categories = {tag["term"] for tag in self.tags or [] if "term" in tag and tag["term"] is not None}
 
         return PaperDTO(
             arxiv_id=arxiv_id,
@@ -72,7 +72,7 @@ class RSSPaperExtractor(AbstractPaperExtractor):
         """
         self.rss_url = rss_url
 
-    def fetch_latest(self, categories: list[model.Category]) -> list[PaperDTO]:
+    def fetch_latest(self, categories: set[model.Category]) -> set[PaperDTO]:
         """Fetch the latest papers from the ArXiv RSS feed for the given categories.
 
         Args:
@@ -82,7 +82,7 @@ class RSSPaperExtractor(AbstractPaperExtractor):
             PaperMissingFieldError: If a required field is missing in the paper.
 
         Returns:
-            A list of `PaperDTO` objects representing the papers.
+            A set of `PaperDTO` objects representing the papers.
         """
         categories_queue = [categories]
         pbar = tqdm(total=len(categories_queue), desc="Fetching latest papers from ArXiv")
@@ -102,18 +102,18 @@ class RSSPaperExtractor(AbstractPaperExtractor):
             pbar.update(1)
 
         pbar.close()
-        return list(paper_dtos)
+        return paper_dtos
 
     def fetch_historical(
         self,
-        categories: list[model.Category],
+        categories: set[model.Category],
         from_date: datetime.date | None,
         to_date: datetime.date | None,
-    ) -> list[PaperDTO]:
+    ) -> set[PaperDTO]:
         """Historical fetching not supported for ArXiv RSS feed."""
         raise NotImplementedError
 
-    def _fetch_papers(self, categories: list[model.Category]) -> list[PaperDTO]:
+    def _fetch_papers(self, categories: set[model.Category]) -> set[PaperDTO]:
         """Fetch the latest papers from the ArXiv RSS feed for the given categories.
 
         Args:
@@ -123,9 +123,9 @@ class RSSPaperExtractor(AbstractPaperExtractor):
             PaperMissingFieldError: If a required field is missing in the paper.
 
         Returns:
-            A list of `PaperDTO` objects representing the papers.
+            A set of `PaperDTO` objects representing the papers.
         """
-        paper_dtos: list[PaperDTO] = []
+        paper_dtos: set[PaperDTO] = set()
         arxiv_rss_url = f"{self.rss_url}{'+'.join([str(category.identifier) for category in categories])}"
         entries: list[dict[str, Any]] = feedparser.parse(arxiv_rss_url).get("entries", [])  # type: ignore[no-untyped-call]
 
@@ -134,45 +134,44 @@ class RSSPaperExtractor(AbstractPaperExtractor):
                 paper_dto = RSSPaperEntry(**entry).to_paper_dto()
             except ValidationError as e:
                 raise PaperMissingFieldError(entry) from e
-            paper_dtos.append(paper_dto)
+            paper_dtos.add(paper_dto)
 
         return paper_dtos
 
-    @staticmethod
-    def _should_split_categories(result: list[PaperDTO], categories: list[model.Category]) -> bool:
+    def _should_split_categories(self, result: set[PaperDTO], categories: set[model.Category]) -> bool:
         """Checks if the categories should be split based on the result and category identifiers.
 
         Args:
-            result: A list of `PaperDTO` objects representing the papers fetched from the extractor.
-            categories: A list of `Category` domain objects representing the categories used
+            result: A set of `PaperDTO` objects representing the papers fetched from the extractor.
+            categories: A set of `Category` domain objects representing the categories used
                 to fetch the result.
 
         Returns:
             True if the categories should be split, False otherwise.
         """
-        return len(result) == RSSPaperExtractor.RSS_FEED_LIMIT and (
-            len(categories) >= 2 or (len(categories) == 1 and categories[0].identifier.subcategory is None)
+        return len(result) == self.RSS_FEED_LIMIT and (
+            len(categories) >= 2 or (len(categories) == 1 and next(iter(categories)).identifier.subcategory is None)
         )
 
     @staticmethod
-    def _split_categories(categories: list[model.Category]) -> list[list[model.Category]]:
-        """Splits the list of categories into two halves.
+    def _split_categories(categories: set[model.Category]) -> list[set[model.Category]]:
+        """Splits the set of categories into two halves.
 
-        If list contains a single category, it is expanded to all subcategories which are then
+        If set contains a single category, it is expanded to all subcategories which are then
         split into two halves.
 
         Args:
-            categories: A list of `Category` domain objects representing the categories used
+            categories: A set of `Category` domain objects representing the categories used
                 to fetch the result.
 
         Returns:
-            A list of lists of `Category` domain objects representing the split categories.
+            A list of sets of `Category` domain objects representing the split categories.
         """
         if len(categories) <= 1:
-            categories = categories[0].subcategories
+            categories = categories.pop().subcategories
 
         mid = len(categories) // 2
-        return [categories[:mid], categories[mid:]]
+        return [set(list(categories)[:mid]), set(list(categories)[mid:])]
 
 
 class JSONPaperEntry(BaseModel):
@@ -200,7 +199,7 @@ class JSONPaperEntry(BaseModel):
             title=" ".join(self.title.split()).strip(),
             abstract=" ".join(self.abstract.split()).strip(),
             published_at=datetime.datetime.strptime(self.update_date, "%Y-%m-%d").date(),
-            categories=self.categories.split(),
+            categories=set(self.categories.split()),
         )
 
 
@@ -215,16 +214,16 @@ class JSONPaperExtractor(AbstractPaperExtractor):
         """
         self._file_path = Path(file_path)
 
-    def fetch_latest(self, categories: list[model.Category]) -> list[PaperDTO]:
+    def fetch_latest(self, categories: set[model.Category]) -> set[PaperDTO]:
         """Latest fetching not supported for json extractor."""
         raise NotImplementedError
 
     def fetch_historical(
         self,
-        categories: list[model.Category],
+        categories: set[model.Category],
         from_date: datetime.date | None,
         to_date: datetime.date | None,
-    ) -> list[PaperDTO]:
+    ) -> set[PaperDTO]:
         """Fetches historical papers for the given categories and time range.
 
         Args:
@@ -236,12 +235,13 @@ class JSONPaperExtractor(AbstractPaperExtractor):
             PaperMissingFieldError: If a required field is missing in the paper.
 
         Returns:
-            A list of `PaperDTO` objects representing the papers.
+            A set of `PaperDTO` objects representing the papers.
         """
         with self._file_path.open("rb") as f:
             n_lines = sum(buf.count(b"\n") for buf in iter(lambda: f.read(1024 * 1024), b""))  # type: ignore[arg-type]
 
-        entries: list[PaperDTO] = []
+        categories |= {subcategory for category in categories for subcategory in category.subcategories}
+        entries: set[PaperDTO] = set()
         with self._file_path.open(encoding="utf-8") as f:
             for line in tqdm(
                 f,
@@ -260,7 +260,7 @@ class JSONPaperExtractor(AbstractPaperExtractor):
                 if to_date and entry.published_at > to_date:
                     continue
 
-                entries.append(entry)
+                entries.add(entry)
 
         return entries
 
@@ -279,7 +279,7 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
         """
         self.url = url
 
-    def fetch_categories(self) -> list[CategoryDTO]:
+    def fetch_categories(self) -> set[CategoryDTO]:
         """Fetches all categories from ArXiv.
 
         Raises:
@@ -287,7 +287,7 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
             CategoryParseError: If parsing categories fails.
 
         Returns:
-            A list of `CategoryDTO` objects representing the categories.
+            A set of `CategoryDTO` objects representing the categories.
         """
         soup = self._fetch_and_parse_html()
         return self._extract_categories(soup)
@@ -315,7 +315,7 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
             raise CategoryParseError(msg)
         return soup
 
-    def _extract_categories(self, soup: Tag) -> list[CategoryDTO]:
+    def _extract_categories(self, soup: Tag) -> set[CategoryDTO]:
         """Extracts categories from the BeautifulSoup object.
 
         Args:
@@ -325,9 +325,9 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
             CategoryParseError: If there is an error parsing the categories.
 
         Returns:
-            A list of `CategoryDTO` objects representing the categories.
+            A set of `CategoryDTO` objects representing the categories.
         """
-        categories: list[CategoryDTO] = []
+        categories: set[CategoryDTO] = set()
         group_name: str | None = None
         archive_name: str | None = None
         archive: str | None = None
@@ -350,7 +350,7 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
                         msg = f"Missing archive for category {category_name!r} in group {group_name!r}"
                         raise CategoryParseError(msg)
 
-                    categories.append(
+                    categories.add(
                         self._create_category_dto(
                             element,
                             archive,
@@ -371,7 +371,7 @@ class ArXivCategoryExtractor(AbstractCategoryExtractor):
             for category in categories
             if category.subcategory is not None
         }
-        return categories + list(archive_categories)
+        return categories | archive_categories
 
     @staticmethod
     def _parse_group_header(element: Tag) -> tuple[str, None, None, None, None]:

@@ -31,8 +31,8 @@ class Paper:
     published_at: datetime.date
     """The date the paper was published."""
 
-    categories: list["Category"] = field(default_factory=list)
-    """The categories the paper belongs to."""
+    categories: set["Category"] = field(default_factory=set)
+    """The set of categories the paper belongs to."""
 
     @property
     def published_at_int(self) -> int:
@@ -185,8 +185,8 @@ class Category:
     description: str | None = None
     """The description of the category."""
 
-    subcategories: list["Category"] = field(default_factory=list)
-    """List of subcategories."""
+    subcategories: set["Category"] = field(default_factory=set)
+    """Set of subcategories."""
 
     def __repr__(self) -> str:
         """Return the string representation of the `Category` domain object.
@@ -195,7 +195,7 @@ class Category:
             The string representation of the `Category` domain object.
         """
         return (
-            f"Category(identifier={self.identifier!r}, archive_name={self.archive_name!r}, "
+            f"Category(identifier='{self.identifier!r}', archive_name={self.archive_name!r}, "
             f"category_name={self.category_name!r}, description={self.description!r})"
         )
 

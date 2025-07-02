@@ -43,7 +43,7 @@ class PaperDTO:
     published_at: datetime.date
     """The date the paper was published."""
 
-    categories: list[str]
+    categories: set[str]
     """The categories the paper belongs to."""
 
     def __eq__(self, other: object) -> bool:
@@ -92,7 +92,7 @@ class AbstractPaperExtractor(ABC):
     """Abstract paper extractor for fetching papers."""
 
     @abstractmethod
-    def fetch_latest(self, categories: list[model.Category]) -> list[PaperDTO]:
+    def fetch_latest(self, categories: set[model.Category]) -> set[PaperDTO]:
         """Fetches the latest papers for the given categories.
 
         Args:
@@ -102,21 +102,20 @@ class AbstractPaperExtractor(ABC):
             PaperMissingFieldError: If a required field is missing in the paper.
 
         Returns:
-            A list of `PaperDTO` objects representing the papers.
+            A set of `PaperDTO` objects representing the papers.
         """
-        raise NotImplementedError
 
     @abstractmethod
     def fetch_historical(
         self,
-        categories: list[model.Category],
+        categories: set[model.Category],
         from_date: datetime.date | None,
         to_date: datetime.date | None,
-    ) -> list[PaperDTO]:
+    ) -> set[PaperDTO]:
         """Fetches historical papers for the given categories and time range.
 
         Args:
-            categories: The `Cateogry` domain objjects to filter the papers by.
+            categories: The `Category` domain objects to filter the papers by.
             from_date: Optional from date filter (inclusive).
             to_date: Optional to date filter (inclusive).
 
@@ -124,16 +123,15 @@ class AbstractPaperExtractor(ABC):
             PaperMissingFieldError: If a required field is missing in the paper.
 
         Returns:
-            A list of `PaperDTO` objects representing the papers.
+            A set of `PaperDTO` objects representing the papers.
         """
-        raise NotImplementedError
 
 
 class AbstractCategoryExtractor(ABC):
     """Abstract category extractor for fetching categories."""
 
     @abstractmethod
-    def fetch_categories(self) -> list[CategoryDTO]:
+    def fetch_categories(self) -> set[CategoryDTO]:
         """Fetches all categories.
 
         Raises:
@@ -141,6 +139,5 @@ class AbstractCategoryExtractor(ABC):
             CategoryParseError: If parsing categories fails.
 
         Returns:
-            A list of `CategoryDTO` objects representing the categories.
+            A set of `CategoryDTO` objects representing the categories.
         """
-        raise NotImplementedError

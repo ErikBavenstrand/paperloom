@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     Date,
     ForeignKey,
+    Index,
     Integer,
     SQLColumnExpression,
     String,
@@ -50,14 +51,14 @@ class CategoryORM(Base):
     category_name: Mapped[str | None] = mapped_column(String, nullable=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    papers: Mapped[list["PaperORM"]] = relationship(
+    papers: Mapped[set["PaperORM"]] = relationship(
         "PaperORM",
         secondary=paper_category,
         back_populates="categories",
         lazy="noload",
     )
 
-    subcategories: Mapped[list["CategoryORM"]] = relationship(
+    subcategories: Mapped[set["CategoryORM"]] = relationship(
         "CategoryORM",
         primaryjoin=and_(
             foreign(archive) == remote(archive),
@@ -68,7 +69,10 @@ class CategoryORM(Base):
         viewonly=True,
     )
 
-    __table_args__ = (UniqueConstraint("archive", "subcategory", name="uq_category_archive_subcategory"),)
+    __table_args__ = (
+        UniqueConstraint("archive", "subcategory", name="uq_category_archive_subcategory"),
+        Index("ix_category_archive_subcategory", "archive", "subcategory"),
+    )
 
     @hybrid_property
     def identifier(self) -> str:
@@ -96,8 +100,13 @@ class PaperORM(Base):
     abstract: Mapped[str] = mapped_column(String)
     published_at: Mapped[datetime.date] = mapped_column(Date)
 
-    categories: Mapped[list["CategoryORM"]] = relationship(
+    categories: Mapped[set["CategoryORM"]] = relationship(
         "CategoryORM",
         secondary=paper_category,
         back_populates="papers",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("arxiv_id", name="uq_paper_arxiv_id"),
+        Index("ix_paper_arxiv_id", "arxiv_id"),
     )

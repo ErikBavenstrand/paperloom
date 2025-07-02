@@ -138,7 +138,7 @@ class TestMilvusVectorRepository:
                 arxiv_id="1234.5678",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("cs.AI"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("cs.AI"))},
                 published_at=datetime.date(2022, 1, 1),
             ),
         ]
@@ -168,7 +168,7 @@ class TestMilvusVectorRepository:
                 arxiv_id="1234.5678",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("cs.AI"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("cs.AI"))},
                 published_at=datetime.date(2022, 1, 1),
             ),
         ]
@@ -189,14 +189,14 @@ class TestMilvusVectorRepository:
                 arxiv_id="1234.5678",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("cs.AI"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("cs.AI"))},
                 published_at=datetime.date(2022, 1, 1),
             ),
             model.Paper(
                 arxiv_id="9876.5432",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("econ"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("econ"))},
                 published_at=datetime.date(2023, 1, 1),
             ),
         ]
@@ -237,14 +237,14 @@ class TestMilvusVectorRepository:
                 arxiv_id="1234.5678",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("cs.AI"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("cs.AI"))},
                 published_at=datetime.date(2022, 1, 1),
             ),
             model.Paper(
                 arxiv_id="9876.5432",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("econ"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("econ"))},
                 published_at=datetime.date(2023, 1, 1),
             ),
         ]
@@ -264,14 +264,14 @@ class TestMilvusVectorRepository:
                 arxiv_id="1234.5678",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("cs.AI"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("cs.AI"))},
                 published_at=datetime.date(2022, 1, 1),
             ),
             model.Paper(
                 arxiv_id="9876.5432",
                 title="",
                 abstract="",
-                categories=[model.Category(model.CategoryIdentifier.from_string("econ"))],
+                categories={model.Category(model.CategoryIdentifier.from_string("econ"))},
                 published_at=datetime.date(2023, 1, 1),
             ),
         ]

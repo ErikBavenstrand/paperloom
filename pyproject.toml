@@ -35,6 +35,7 @@ preview = true
 extend-select = ["ALL"]
 ignore = [
     "ANN401",
+    "COM812",
     "CPY",
     "D100",
     "D104",
@@ -46,6 +47,8 @@ ignore = [
     "PLR0913",
     "PLR0917",
     "PLR2004",
+    "TD002",
+    "TD003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -83,3 +86,12 @@ lines_after_imports = 1
 line_length = 120
 use_parentheses = true
 include_trailing_comma = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=paperloom --cov-report html"
+
+[tool.coverage.run]
+omit = [
+    'tests/*',
+    'cli.py',
+]
